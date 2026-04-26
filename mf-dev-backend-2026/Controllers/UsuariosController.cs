@@ -1,14 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using mf_dev_backend_2026.Models;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
-using mf_dev_backend_2026.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace mf_dev_backend_2026.Controllers
 {
+    [Authorize(Roles = "Admin")]
     public class UsuariosController : Controller
     {
         private readonly AppDbContext _context;
@@ -22,6 +26,73 @@ namespace mf_dev_backend_2026.Controllers
         public async Task<IActionResult> Index()
         {
             return View(await _context.Usuarios.ToListAsync());
+        }
+
+        [AllowAnonymous]
+        public IActionResult AccessDenied()
+        {
+            return View();
+        }
+
+        [AllowAnonymous]
+        public IActionResult Login()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        public async Task<IActionResult> Login([Bind("Id,Senha")] Usuario usuario, string returnUrl = null)
+        {
+            var user = await _context.Usuarios
+                .FirstOrDefaultAsync(m => m.Id == usuario.Id);
+
+            if (user == null)
+            {
+                ViewBag.Message = "Usuário e/ou Senha inválidos!";
+                return View();
+            }
+
+            bool isSenhaOk = BCrypt.Net.BCrypt.Verify(usuario.Senha, user.Senha);
+
+            if (isSenhaOk)
+            {
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.Name, user.Nome),
+                    new Claim(ClaimTypes.NameIdentifier, user.Nome),
+                    new Claim(ClaimTypes.Role, user.Perfil.ToString())
+                };
+
+                var userIdentity = new ClaimsIdentity(claims, "login");
+
+                ClaimsPrincipal principal = new ClaimsPrincipal(userIdentity);
+
+                var props = new AuthenticationProperties
+                {
+                    AllowRefresh = true,
+                    ExpiresUtc = DateTime.Now.ToLocalTime().AddDays(7),
+                    IsPersistent = true
+                };
+
+                await HttpContext.SignInAsync(principal, props);
+
+                if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+                    return Redirect(returnUrl);
+
+                return RedirectToAction("Index", "Veiculos");
+
+            }
+
+            ViewBag.Message = "Usuário e/ou Senha inválidos!";
+            return View();
+        }
+
+        [AllowAnonymous]
+        public async Task<IActionResult> Logout()
+        {
+            await HttpContext.SignOutAsync();
+            return RedirectToAction("Login", "Usuarios");
         }
 
         // GET: Usuarios/Details/5
